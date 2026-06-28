@@ -2,6 +2,7 @@ import './style.css'
 import { supabase } from './supabase.js'
 
 let todos = []
+let currentUser = null
 
 const form = document.getElementById('todo-form')
 const input = document.getElementById('todo-input')
@@ -32,10 +33,35 @@ function render() {
     .join('')
 }
 
+async function ensureSession() {
+  const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+
+  if (sessionError) {
+    console.error('Failed to get session:', sessionError.message)
+    return null
+  }
+
+  if (session) {
+    return session.user
+  }
+
+  const { data, error } = await supabase.auth.signInAnonymously()
+
+  if (error) {
+    console.error('Failed to sign in anonymously:', error.message)
+    return null
+  }
+
+  return data.user
+}
+
 async function loadTodos() {
+  if (!currentUser) return
+
   const { data, error } = await supabase
     .from('todos')
     .select('id, text, is_complete, created_at')
+    .eq('user_id', currentUser.id)
     .order('created_at', { ascending: true })
 
   if (error) {
@@ -48,7 +74,11 @@ async function loadTodos() {
 }
 
 async function addTodo(text) {
-  const { error } = await supabase.from('todos').insert({ text, is_complete: false })
+  const { error } = await supabase.from('todos').insert({
+    text,
+    is_complete: false,
+    user_id: currentUser.id,
+  })
 
   if (error) {
     console.error('Failed to add todo:', error.message)
@@ -107,4 +137,10 @@ list.addEventListener('click', async (event) => {
   await deleteTodo(id)
 })
 
-loadTodos()
+async function init() {
+  currentUser = await ensureSession()
+  if (!currentUser) return
+  await loadTodos()
+}
+
+init()
