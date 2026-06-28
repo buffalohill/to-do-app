@@ -12,6 +12,78 @@
         <h1 class="todo-title">My Todo List</h1>
       </header>
 
+      <section class="auth-panel" id="auth-panel">
+        <div id="auth-guest">
+          <div class="auth-toggle">
+            <button type="button" class="auth-toggle-button" id="show-sign-up" aria-expanded="false" aria-controls="sign-up-form">
+              Create account
+            </button>
+            <button type="button" class="auth-toggle-button" id="show-sign-in" aria-expanded="false" aria-controls="sign-in-form">
+              Sign in
+            </button>
+          </div>
+
+          <form class="auth-form" id="sign-up-form" hidden>
+            <h2 class="auth-heading">Create account</h2>
+            <input
+              type="email"
+              id="sign-up-email"
+              class="auth-input"
+              name="email"
+              placeholder="Email"
+              autocomplete="email"
+              required
+            />
+            <input
+              type="password"
+              id="sign-up-password"
+              class="auth-input"
+              name="password"
+              placeholder="Password"
+              minlength="6"
+              autocomplete="new-password"
+              required
+            />
+            <button type="submit" class="auth-submit">Sign up</button>
+            <p class="auth-feedback" id="sign-up-feedback" hidden></p>
+          </form>
+
+          <form class="auth-form" id="sign-in-form" hidden>
+            <h2 class="auth-heading">Sign in</h2>
+            <input
+              type="email"
+              id="sign-in-email"
+              class="auth-input"
+              name="email"
+              placeholder="Email"
+              autocomplete="email"
+              required
+            />
+            <input
+              type="password"
+              id="sign-in-password"
+              class="auth-input"
+              name="password"
+              placeholder="Password"
+              autocomplete="current-password"
+              required
+            />
+            <button type="submit" class="auth-submit">Sign in</button>
+            <p class="auth-feedback" id="sign-in-feedback" hidden></p>
+          </form>
+        </div>
+
+        <div id="auth-user" hidden>
+          <div class="auth-toggle">
+            <p class="auth-user-email">
+              <span class="auth-user-label">Signed in as</span>
+              <span class="auth-user-address" id="user-email"></span>
+            </p>
+            <button type="button" id="sign-out-button" class="auth-toggle-button">Sign out</button>
+          </div>
+        </div>
+      </section>
+
       <form class="todo-form" id="todo-form">
         <input
           type="text"
