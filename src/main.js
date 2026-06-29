@@ -1,5 +1,5 @@
 // =============================================================================
-// MY TODO APP — main entry point
+// DOTODOS — main entry point
 // This file wires up the UI, talks to Supabase, and keeps everything in sync.
 // =============================================================================
 

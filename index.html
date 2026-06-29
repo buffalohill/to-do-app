@@ -4,13 +4,20 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>my-todo-app</title>
+    <title>DoTodos</title>
   </head>
   <body>
     <!-- Main app container — styles limit width and centre on the page -->
     <div id="app">
       <header class="todo-header">
-        <h1 class="todo-title">My Todo List</h1>
+        <h1 class="todo-title">
+          <span class="todo-title-mark" aria-hidden="true">
+            <svg class="todo-title-icon" width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+              <path d="M5 10.5L8.5 14L15 7" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </span>
+          <span class="todo-title-text">Do<span class="todo-title-accent">Todos</span></span>
+        </h1>
       </header>
 
       <!-- Auth: guests see sign-up/sign-in; signed-in users see their email -->
