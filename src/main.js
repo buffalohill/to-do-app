@@ -6,10 +6,13 @@ let currentUser = null
 let draggedTodoId = null
 let dropInsertIndex = null
 let dragState = null
+let editingTodoId = null
+let editingOriginalText = null
 
 const DRAG_THRESHOLD = 6
 
 const EDIT_ICON = `<svg class="todo-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10.5 2.5l3 3L5.5 13.5H2.5v-3L10.5 2.5z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>`
+const CONFIRM_ICON = `<svg class="todo-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 8.5l3.5 3.5 6.5-7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`
 const DELETE_ICON = `<svg class="todo-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`
 
 const form = document.getElementById('todo-form')
@@ -122,17 +125,89 @@ function updateAuthUI(user) {
   }
 }
 
+function focusEditInput() {
+  if (!editingTodoId) return
+
+  const editInput = list.querySelector(`[data-id="${editingTodoId}"] .todo-text-input`)
+  if (!editInput) return
+
+  editInput.focus()
+  const length = editInput.value.length
+  editInput.setSelectionRange(length, length)
+}
+
+function enterEditMode(id) {
+  const todo = todos.find((t) => t.id === id)
+  if (!todo) return
+
+  editingTodoId = id
+  editingOriginalText = todo.text
+  render()
+}
+
+function cancelEdit() {
+  editingTodoId = null
+  editingOriginalText = null
+  render()
+}
+
+async function confirmEdit(id) {
+  const item = list.querySelector(`[data-id="${id}"]`)
+  const editInput = item?.querySelector('.todo-text-input')
+
+  if (!editInput) {
+    editingTodoId = null
+    editingOriginalText = null
+    render()
+    return
+  }
+
+  const text = editInput.value.trim()
+
+  if (!text) {
+    editingTodoId = null
+    editingOriginalText = null
+    render()
+    return
+  }
+
+  if (text === editingOriginalText) {
+    editingTodoId = null
+    editingOriginalText = null
+    render()
+    return
+  }
+
+  editingTodoId = null
+  editingOriginalText = null
+  await updateTodoText(id, text)
+}
+
 function render() {
   list.querySelectorAll('.todo-item').forEach((el) => el.remove())
 
   todos.forEach((todo) => {
+    const isEditing = editingTodoId === todo.id
     const li = document.createElement('li')
-    li.className = `todo-item${todo.is_complete ? ' todo-item--completed' : ''}`
+    li.className = `todo-item${todo.is_complete ? ' todo-item--completed' : ''}${isEditing ? ' todo-item--editing' : ''}`
     li.dataset.id = String(todo.id)
+
+    const textMarkup = isEditing
+      ? `<input type="text" class="todo-text todo-text-input" value="${escapeHtml(todo.text)}" aria-label="Edit todo" />`
+      : `<span class="todo-text">${escapeHtml(todo.text)}</span>`
+
+    const editButtonClass = isEditing ? 'todo-confirm-button' : 'todo-edit-button'
+    const editButtonLabel = isEditing ? 'Confirm edit' : 'Edit'
+    const editButtonIcon = isEditing ? CONFIRM_ICON : EDIT_ICON
+
     li.innerHTML = `
-      <button type="button" class="todo-drag-handle" aria-label="Reorder">⋮⋮</button>
-      <span class="todo-text">${escapeHtml(todo.text)}</span>
+      <div class="todo-reorder-zone">
+        <button type="button" class="todo-drag-handle" aria-label="Reorder">⋮⋮</button>
+        ${textMarkup}
+      </div>
       <div class="todo-actions">
+        <button type="button" class="todo-action-target todo-icon-button ${editButtonClass}" aria-label="${editButtonLabel}">${editButtonIcon}</button>
+        <button type="button" class="todo-action-target todo-icon-button todo-delete-button" aria-label="Delete">${DELETE_ICON}</button>
         <label class="todo-action-target todo-checkbox-label">
           <input
             type="checkbox"
@@ -141,12 +216,12 @@ function render() {
             aria-label="Mark complete"
           />
         </label>
-        <button type="button" class="todo-action-target todo-icon-button todo-edit-button" aria-label="Edit">${EDIT_ICON}</button>
-        <button type="button" class="todo-action-target todo-icon-button todo-delete-button" aria-label="Delete">${DELETE_ICON}</button>
       </div>
     `
     list.insertBefore(li, dropIndicator)
   })
+
+  focusEditInput()
 }
 
 async function ensureSession() {
@@ -290,6 +365,18 @@ async function deleteTodo(id) {
 
   if (error) {
     console.error('Failed to delete todo:', error.message)
+    return
+  }
+
+  await loadTodos()
+}
+
+async function updateTodoText(id, text) {
+  const { error } = await supabase.from('todos').update({ text }).eq('id', id)
+
+  if (error) {
+    console.error('Failed to update todo:', error.message)
+    await loadTodos()
     return
   }
 
@@ -481,6 +568,24 @@ list.addEventListener('change', async (event) => {
 })
 
 list.addEventListener('click', async (event) => {
+  const editButton = event.target.closest('.todo-edit-button, .todo-confirm-button')
+  if (editButton) {
+    const item = editButton.closest('.todo-item')
+    const id = Number(item.dataset.id)
+
+    if (editingTodoId === id) {
+      await confirmEdit(id)
+      return
+    }
+
+    if (editingTodoId !== null) {
+      await confirmEdit(editingTodoId)
+    }
+
+    enterEditMode(id)
+    return
+  }
+
   const deleteButton = event.target.closest('.todo-delete-button')
   if (!deleteButton) return
   const item = deleteButton.closest('.todo-item')
@@ -488,16 +593,32 @@ list.addEventListener('click', async (event) => {
   await deleteTodo(id)
 })
 
-list.addEventListener('pointerdown', (event) => {
-  const handle = event.target.closest('.todo-drag-handle')
-  if (!handle) return
+list.addEventListener('keydown', async (event) => {
+  if (!editingTodoId) return
 
-  const item = handle.closest('.todo-item')
+  if (event.key === 'Escape') {
+    cancelEdit()
+    return
+  }
+
+  if (event.key === 'Enter' && event.target.matches('.todo-text-input')) {
+    event.preventDefault()
+    await confirmEdit(editingTodoId)
+  }
+})
+
+list.addEventListener('pointerdown', (event) => {
+  if (editingTodoId !== null) return
+
+  const zone = event.target.closest('.todo-reorder-zone')
+  if (!zone) return
+
+  const item = zone.closest('.todo-item')
   if (!item) return
 
   event.preventDefault()
 
-  handle.setPointerCapture(event.pointerId)
+  zone.setPointerCapture(event.pointerId)
   triggerReorderHaptic()
 
   item.classList.add('todo-item--reorder-active')
