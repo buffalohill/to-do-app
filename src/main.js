@@ -1,23 +1,49 @@
+// =============================================================================
+// MY TODO APP — main entry point
+// This file wires up the UI, talks to Supabase, and keeps everything in sync.
+// =============================================================================
+
 import './style.css'
 import { supabase } from './supabase.js'
 
-let todos = []
-let currentUser = null
+// -----------------------------------------------------------------------------
+// App state — these variables change as the user interacts with the app
+// -----------------------------------------------------------------------------
+
+let todos = [] // All todos for the current user, loaded from the database
+let currentUser = null // The Supabase user object (anonymous or signed-in)
+let editingTodoId = null // Which todo is being edited inline (null = none)
+let editingOriginalText = null // Text before editing, used to skip no-op saves
+
+// Drag-and-drop reorder state
 let draggedTodoId = null
 let dropInsertIndex = null
-let dragState = null
-let editingTodoId = null
-let editingOriginalText = null
+let dragState = null // Full pointer-drag session (ghost element, offsets, etc.)
 
+// Auth bootstrap flags — prevent double-loading on startup
+let authReady = false
+let authBootstrapped = false
+
+// -----------------------------------------------------------------------------
+// Constants
+// -----------------------------------------------------------------------------
+
+// Pixels the pointer must move before a press becomes a drag (avoids accidental drags)
 const DRAG_THRESHOLD = 6
 
+// SVG icons injected into edit / confirm / delete buttons (currentColor inherits from CSS)
 const EDIT_ICON = `<svg class="todo-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10.5 2.5l3 3L5.5 13.5H2.5v-3L10.5 2.5z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>`
 const CONFIRM_ICON = `<svg class="todo-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 8.5l3.5 3.5 6.5-7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`
 const DELETE_ICON = `<svg class="todo-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`
 
+// -----------------------------------------------------------------------------
+// DOM references — grab elements once so we don't query the page repeatedly
+// -----------------------------------------------------------------------------
+
 const form = document.getElementById('todo-form')
 const input = document.getElementById('todo-input')
 const list = document.getElementById('todo-list')
+
 const authGuest = document.getElementById('auth-guest')
 const authUser = document.getElementById('auth-user')
 const userEmail = document.getElementById('user-email')
@@ -29,26 +55,36 @@ const signOutButton = document.getElementById('sign-out-button')
 const showSignUpButton = document.getElementById('show-sign-up')
 const showSignInButton = document.getElementById('show-sign-in')
 
+// Drop indicator: a horizontal line that shows where a dragged item will land
 const dropIndicator = document.createElement('div')
 dropIndicator.className = 'todo-drop-indicator'
 dropIndicator.hidden = true
 list.appendChild(dropIndicator)
 
-let authReady = false
-let authBootstrapped = false
+// -----------------------------------------------------------------------------
+// Small helpers
+// -----------------------------------------------------------------------------
 
+/** Escape text so it is safe to insert into HTML (prevents XSS). */
 function escapeHtml(text) {
   const el = document.createElement('span')
   el.textContent = text
   return el.innerHTML
 }
 
+/** True when the user has a real email account (not an anonymous guest session). */
 function isPermanentUser(user) {
   return Boolean(user && !user.is_anonymous && user.email)
 }
 
-function showTodoError(message) {
-  if (!message) return
+/** Clear inline-edit mode. */
+function resetEditState() {
+  editingTodoId = null
+  editingOriginalText = null
+}
+
+/** Show a single message row in the todo list (errors, empty states, etc.). */
+function showListMessage(message) {
   list.querySelectorAll('.todo-item').forEach((el) => el.remove())
   const li = document.createElement('li')
   li.className = 'todo-item'
@@ -56,6 +92,74 @@ function showTodoError(message) {
   list.insertBefore(li, dropIndicator)
 }
 
+// -----------------------------------------------------------------------------
+// Auth UI
+// -----------------------------------------------------------------------------
+
+/** Show or hide a feedback message under a sign-up / sign-in form. */
+function setAuthFeedback(element, message, isError = false) {
+  if (!message) {
+    element.hidden = true
+    element.textContent = ''
+    element.classList.remove('auth-feedback--error')
+    return
+  }
+
+  element.hidden = false
+  element.textContent = message
+  element.classList.toggle('auth-feedback--error', isError)
+}
+
+/** Open the sign-up or sign-in form. Pass null to close both (toggle behaviour). */
+function showAuthForm(mode) {
+  if (!mode) {
+    closeAuthForms()
+    return
+  }
+
+  const showSignUp = mode === 'sign-up'
+  const showSignIn = mode === 'sign-in'
+
+  signUpForm.hidden = !showSignUp
+  signInForm.hidden = !showSignIn
+  showSignUpButton.classList.toggle('auth-toggle-button--active', showSignUp)
+  showSignInButton.classList.toggle('auth-toggle-button--active', showSignIn)
+  showSignUpButton.setAttribute('aria-expanded', String(showSignUp))
+  showSignInButton.setAttribute('aria-expanded', String(showSignIn))
+
+  const activeForm = showSignUp ? signUpForm : showSignIn ? signInForm : null
+  activeForm?.querySelector('input')?.focus()
+}
+
+/** Hide both auth forms and reset toggle button styles. */
+function closeAuthForms() {
+  signUpForm.hidden = true
+  signInForm.hidden = true
+  showSignUpButton.classList.remove('auth-toggle-button--active')
+  showSignInButton.classList.remove('auth-toggle-button--active')
+  showSignUpButton.setAttribute('aria-expanded', 'false')
+  showSignInButton.setAttribute('aria-expanded', 'false')
+}
+
+/** Swap between guest auth panel and signed-in user panel. */
+function updateAuthUI(user) {
+  const showGuest = !isPermanentUser(user)
+
+  authGuest.hidden = !showGuest
+  authUser.hidden = showGuest
+
+  if (isPermanentUser(user)) {
+    userEmail.textContent = user.email
+    userEmail.title = user.email
+    closeAuthForms()
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Session management
+// -----------------------------------------------------------------------------
+
+/** Return the current Supabase session user, or create an anonymous one. */
 async function getSessionUser() {
   const { data: { session }, error } = await supabase.auth.getSession()
 
@@ -72,116 +176,184 @@ async function getSessionUser() {
   return ensureSession()
 }
 
-function setAuthFeedback(element, message, isError = false) {
-  if (!message) {
-    element.hidden = true
-    element.textContent = ''
-    element.classList.remove('auth-feedback--error')
+/** Sign in anonymously so guests can use todos without creating an account. */
+async function ensureSession() {
+  const { data, error } = await supabase.auth.signInAnonymously()
+
+  if (error) {
+    console.error('Failed to sign in anonymously:', error.message)
+    return null
+  }
+
+  currentUser = data.user
+  return data.user
+}
+
+/** React to any auth change: update UI and reload todos. */
+async function handleAuthState(user) {
+  currentUser = user
+  updateAuthUI(user)
+
+  if (!user) {
+    showListMessage(
+      'Sign-in failed. Enable anonymous auth in Supabase (Authentication → Providers → Anonymous).',
+    )
     return
   }
 
-  element.hidden = false
-  element.textContent = message
-  element.classList.toggle('auth-feedback--error', isError)
+  await loadTodos()
 }
 
-function showAuthForm(mode) {
-  const showSignUp = mode === 'sign-up'
-  const showSignIn = mode === 'sign-in'
+/** Create a new account, or upgrade an anonymous session to a permanent one. */
+async function signUpAccount(email, password) {
+  if (currentUser?.is_anonymous) {
+    // Upgrade anonymous session — same user ID, so existing todos carry over
+    const { data: combinedData, error: combinedError } = await supabase.auth.updateUser({
+      email,
+      password,
+    })
 
-  signUpForm.hidden = !showSignUp
-  signInForm.hidden = !showSignIn
-  showSignUpButton.classList.toggle('auth-toggle-button--active', showSignUp)
-  showSignInButton.classList.toggle('auth-toggle-button--active', showSignIn)
-  showSignUpButton.setAttribute('aria-expanded', String(showSignUp))
-  showSignInButton.setAttribute('aria-expanded', String(showSignIn))
+    if (!combinedError) {
+      return { user: combinedData.user }
+    }
 
-  if (showSignUp) {
-    signUpForm.querySelector('input')?.focus()
-  } else if (showSignIn) {
-    signInForm.querySelector('input')?.focus()
+    // Some Supabase configs require email and password in separate steps
+    const { data: emailData, error: emailError } = await supabase.auth.updateUser({ email })
+    if (emailError) throw emailError
+
+    const { data: passwordData, error: passwordError } = await supabase.auth.updateUser({ password })
+    if (passwordError) {
+      return {
+        user: emailData.user,
+        needsVerification: true,
+        message: 'Check your email to verify your account, then sign in with your password.',
+      }
+    }
+
+    return { user: passwordData.user }
+  }
+
+  const { data, error } = await supabase.auth.signUp({ email, password })
+  if (error) throw error
+
+  return {
+    user: data.user,
+    needsVerification: !data.session,
+    message: data.session
+      ? null
+      : 'Check your email to confirm your account, then sign in.',
   }
 }
 
-function closeAuthForms() {
-  signUpForm.hidden = true
-  signInForm.hidden = true
-  showSignUpButton.classList.remove('auth-toggle-button--active')
-  showSignInButton.classList.remove('auth-toggle-button--active')
-  showSignUpButton.setAttribute('aria-expanded', 'false')
-  showSignInButton.setAttribute('aria-expanded', 'false')
+/** Sign in with email and password. */
+async function signInAccount(email, password) {
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+  if (error) throw error
+  return data.user
 }
 
-function updateAuthUI(user) {
-  const showGuest = !isPermanentUser(user)
+// -----------------------------------------------------------------------------
+// Todo CRUD (Create, Read, Update, Delete) via Supabase
+// -----------------------------------------------------------------------------
 
-  authGuest.hidden = !showGuest
-  authUser.hidden = showGuest
+/** Fetch all todos for the current user from the database. */
+async function loadTodos() {
+  const user = await getSessionUser()
+  if (!user) return
 
-  if (isPermanentUser(user)) {
-    userEmail.textContent = user.email
-    userEmail.title = user.email
-    closeAuthForms()
+  const { data, error } = await supabase
+    .from('todos')
+    .select('id, text, is_complete, sort_order')
+    .eq('user_id', user.id)
+    .order('sort_order', { ascending: true })
+
+  if (error) {
+    console.error('Failed to load todos:', error.message)
+    showListMessage(`Could not load todos: ${error.message}`)
+    return
   }
-}
 
-function focusEditInput() {
-  if (!editingTodoId) return
-
-  const editInput = list.querySelector(`[data-id="${editingTodoId}"] .todo-text-input`)
-  if (!editInput) return
-
-  editInput.focus()
-  const length = editInput.value.length
-  editInput.setSelectionRange(length, length)
-}
-
-function enterEditMode(id) {
-  const todo = todos.find((t) => t.id === id)
-  if (!todo) return
-
-  editingTodoId = id
-  editingOriginalText = todo.text
+  todos = data
   render()
 }
 
-function cancelEdit() {
-  editingTodoId = null
-  editingOriginalText = null
-  render()
+/** Insert a new todo at the end of the list. */
+async function addTodo(text) {
+  const user = await getSessionUser()
+  if (!user) {
+    showListMessage('Could not add todo: no active session.')
+    return
+  }
+
+  const maxSortOrder = todos.length > 0 ? Math.max(...todos.map((t) => t.sort_order)) : -1
+
+  const { error } = await supabase.from('todos').insert({
+    text,
+    is_complete: false,
+    user_id: user.id,
+    sort_order: maxSortOrder + 1,
+  })
+
+  if (error) {
+    console.error('Failed to add todo:', error.message)
+    showListMessage(`Could not add todo: ${error.message}`)
+    return
+  }
+
+  input.value = ''
+  input.focus()
+  await loadTodos()
 }
 
-async function confirmEdit(id) {
-  const item = list.querySelector(`[data-id="${id}"]`)
-  const editInput = item?.querySelector('.todo-text-input')
+/** Toggle the completed checkbox for one todo. */
+async function toggleTodo(id, isComplete) {
+  const { error } = await supabase
+    .from('todos')
+    .update({ is_complete: isComplete })
+    .eq('id', id)
 
-  if (!editInput) {
-    editingTodoId = null
-    editingOriginalText = null
-    render()
-    return
-  }
-
-  const text = editInput.value.trim()
-
-  if (!text) {
-    editingTodoId = null
-    editingOriginalText = null
-    render()
-    return
-  }
-
-  if (text === editingOriginalText) {
-    editingTodoId = null
-    editingOriginalText = null
-    render()
-    return
-  }
-
-  editingTodoId = null
-  editingOriginalText = null
-  await updateTodoText(id, text)
+  if (error) console.error('Failed to update todo:', error.message)
+  await loadTodos()
 }
+
+/** Remove a todo from the database. */
+async function deleteTodo(id) {
+  const { error } = await supabase.from('todos').delete().eq('id', id)
+
+  if (error) {
+    console.error('Failed to delete todo:', error.message)
+    return
+  }
+
+  await loadTodos()
+}
+
+/** Save edited todo text to the database. */
+async function updateTodoText(id, text) {
+  const { error } = await supabase.from('todos').update({ text }).eq('id', id)
+
+  if (error) console.error('Failed to update todo:', error.message)
+  await loadTodos()
+}
+
+/** Write new sort_order values to the database after a drag reorder. */
+async function persistSortOrder() {
+  const updates = todos.map((todo) =>
+    supabase.from('todos').update({ sort_order: todo.sort_order }).eq('id', todo.id),
+  )
+
+  const results = await Promise.all(updates)
+  const error = results.find((r) => r.error)?.error
+
+  if (error) {
+    console.error('Failed to persist sort order:', error.message)
+    await loadTodos()
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Rendering — rebuild the todo list in the DOM from the `todos` array
+// -----------------------------------------------------------------------------
 
 function render() {
   list.querySelectorAll('.todo-item').forEach((el) => el.remove())
@@ -224,167 +396,128 @@ function render() {
   focusEditInput()
 }
 
-async function ensureSession() {
-  const { data, error } = await supabase.auth.signInAnonymously()
+// -----------------------------------------------------------------------------
+// Inline edit mode
+// -----------------------------------------------------------------------------
 
-  if (error) {
-    console.error('Failed to sign in anonymously:', error.message)
-    return null
-  }
+/** Move the cursor to the end of the edit input after render. */
+function focusEditInput() {
+  if (!editingTodoId) return
 
-  currentUser = data.user
-  return data.user
+  const editInput = list.querySelector(`[data-id="${editingTodoId}"] .todo-text-input`)
+  if (!editInput) return
+
+  editInput.focus()
+  const length = editInput.value.length
+  editInput.setSelectionRange(length, length)
 }
 
-async function handleAuthState(user) {
-  currentUser = user
-  updateAuthUI(user)
+/** Switch one todo into edit mode. */
+function enterEditMode(id) {
+  const todo = todos.find((t) => t.id === id)
+  if (!todo) return
 
-  if (!user) {
-    list.querySelectorAll('.todo-item').forEach((el) => el.remove())
-    const li = document.createElement('li')
-    li.className = 'todo-item'
-    li.textContent =
-      'Sign-in failed. Enable anonymous auth in Supabase (Authentication → Providers → Anonymous).'
-    list.insertBefore(li, dropIndicator)
-    return
-  }
-
-  await loadTodos()
-}
-
-async function loadTodos() {
-  const user = await getSessionUser()
-  if (!user) return
-
-  const { data, error } = await supabase
-    .from('todos')
-    .select('id, text, is_complete, sort_order')
-    .eq('user_id', user.id)
-    .order('sort_order', { ascending: true })
-
-  if (error) {
-    console.error('Failed to load todos:', error.message)
-    showTodoError(`Could not load todos: ${error.message}`)
-    return
-  }
-
-  todos = data
+  editingTodoId = id
+  editingOriginalText = todo.text
   render()
 }
 
-async function signUpAccount(email, password) {
-  if (currentUser?.is_anonymous) {
-    // Upgrade the anonymous session — same user ID, so existing todos carry over
-    const { data: combinedData, error: combinedError } = await supabase.auth.updateUser({
-      email,
-      password,
-    })
-
-    if (!combinedError) {
-      return { user: combinedData.user }
-    }
-
-    const { data: emailData, error: emailError } = await supabase.auth.updateUser({ email })
-    if (emailError) throw emailError
-
-    const { data: passwordData, error: passwordError } = await supabase.auth.updateUser({ password })
-    if (passwordError) {
-      return {
-        user: emailData.user,
-        needsVerification: true,
-        message: 'Check your email to verify your account, then sign in with your password.',
-      }
-    }
-
-    return { user: passwordData.user }
-  }
-
-  const { data, error } = await supabase.auth.signUp({ email, password })
-  if (error) throw error
-
-  return {
-    user: data.user,
-    needsVerification: !data.session,
-    message: data.session
-      ? null
-      : 'Check your email to confirm your account, then sign in.',
-  }
+/** Discard edits and return to normal view. */
+function cancelEdit() {
+  resetEditState()
+  render()
 }
 
-async function signInAccount(email, password) {
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password })
-  if (error) throw error
-  return data.user
-}
+/** Save the edited text if it changed; otherwise just exit edit mode. */
+async function confirmEdit(id) {
+  const item = list.querySelector(`[data-id="${id}"]`)
+  const editInput = item?.querySelector('.todo-text-input')
+  const originalText = editingOriginalText
 
-async function addTodo(text) {
-  const user = await getSessionUser()
-  if (!user) {
-    showTodoError('Could not add todo: no active session.')
+  resetEditState()
+
+  if (!editInput) {
+    render()
     return
   }
 
-  const maxSortOrder = todos.length > 0 ? Math.max(...todos.map((t) => t.sort_order)) : -1
+  const text = editInput.value.trim()
+  if (!text || text === originalText) {
+    render()
+    return
+  }
 
-  const { error } = await supabase.from('todos').insert({
-    text,
-    is_complete: false,
-    user_id: user.id,
-    sort_order: maxSortOrder + 1,
+  await updateTodoText(id, text)
+}
+
+// -----------------------------------------------------------------------------
+// Drag-and-drop reorder
+// -----------------------------------------------------------------------------
+
+/** Record each row's on-screen position (used for the post-drop slide animation). */
+function captureItemPositions() {
+  const positions = new Map()
+
+  list.querySelectorAll('.todo-item').forEach((el) => {
+    const rect = el.getBoundingClientRect()
+    positions.set(Number(el.dataset.id), { top: rect.top, left: rect.left })
   })
 
-  if (error) {
-    console.error('Failed to add todo:', error.message)
-    showTodoError(`Could not add todo: ${error.message}`)
-    return
-  }
-
-  input.value = ''
-  input.focus()
-  await loadTodos()
+  return positions
 }
 
-async function toggleTodo(id, isComplete) {
-  const { error } = await supabase
-    .from('todos')
-    .update({ is_complete: isComplete })
-    .eq('id', id)
+/** FLIP animation: rows visually slide from their old slots into their new ones. */
+function animateReorder(firstPositions) {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
 
-  if (error) {
-    console.error('Failed to update todo:', error.message)
-    await loadTodos()
-    return
+  const items = [...list.querySelectorAll('.todo-item')]
+  const moving = []
+
+  items.forEach((el) => {
+    const first = firstPositions.get(Number(el.dataset.id))
+    if (!first) return
+
+    const last = el.getBoundingClientRect()
+    const deltaX = first.left - last.left
+    const deltaY = first.top - last.top
+
+    if (Math.abs(deltaX) < 0.5 && Math.abs(deltaY) < 0.5) return
+
+    moving.push(el)
+    el.classList.add('todo-item--reorder-animate', 'todo-item--reorder-invert')
+    el.style.transform = `translate3d(${deltaX}px, ${deltaY}px, 0)`
+  })
+
+  if (moving.length === 0) return
+
+  // Two frames: apply the offset instantly, then animate back to the natural layout
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      moving.forEach((el) => {
+        el.classList.remove('todo-item--reorder-invert')
+        el.style.transform = ''
+      })
+    })
+  })
+
+  const cleanup = () => {
+    moving.forEach((el) => {
+      el.classList.remove('todo-item--reorder-animate', 'todo-item--reorder-invert')
+      el.style.transform = ''
+      el.style.willChange = ''
+    })
   }
 
-  await loadTodos()
+  const durationMs = Number.parseFloat(
+    getComputedStyle(document.documentElement).getPropertyValue('--duration-reorder'),
+  ) * 1000
+
+  window.setTimeout(cleanup, durationMs + 50)
 }
 
-async function deleteTodo(id) {
-  const { error } = await supabase.from('todos').delete().eq('id', id)
-
-  if (error) {
-    console.error('Failed to delete todo:', error.message)
-    return
-  }
-
-  await loadTodos()
-}
-
-async function updateTodoText(id, text) {
-  const { error } = await supabase.from('todos').update({ text }).eq('id', id)
-
-  if (error) {
-    console.error('Failed to update todo:', error.message)
-    await loadTodos()
-    return
-  }
-
-  await loadTodos()
-}
-
-function reorderTodos(fromIndex, insertIndex) {
-  if (insertIndex === fromIndex || insertIndex === fromIndex + 1) return
+/** Reorder the in-memory array, animate the shift, then persist to Supabase. */
+function reorderTodos(fromIndex, insertIndex, firstPositions = null) {
+  if (insertIndex === fromIndex || insertIndex === fromIndex + 1) return false
 
   const [moved] = todos.splice(fromIndex, 1)
   const toIndex = insertIndex > fromIndex ? insertIndex - 1 : insertIndex
@@ -395,9 +528,16 @@ function reorderTodos(fromIndex, insertIndex) {
   })
 
   render()
+
+  if (firstPositions) {
+    animateReorder(firstPositions)
+  }
+
   persistSortOrder()
+  return true
 }
 
+/** Figure out which list index the pointer is hovering over. */
 function getInsertIndex(clientY) {
   const items = [...list.querySelectorAll('.todo-item')]
   if (items.length === 0) return 0
@@ -410,6 +550,7 @@ function getInsertIndex(clientY) {
   return items.length
 }
 
+/** Position the drop indicator line at the target insert index. */
 function positionDropIndicator(insertIndex) {
   const items = list.querySelectorAll('.todo-item')
 
@@ -445,12 +586,14 @@ function clearDropIndicator() {
   dropIndicator.hidden = true
 }
 
+/** Short vibration on supported phones when a drag starts. */
 function triggerReorderHaptic() {
   if (typeof navigator.vibrate === 'function') {
     navigator.vibrate(12)
   }
 }
 
+/** Clone the dragged row so it can follow the pointer. */
 function createDragGhost(item) {
   const rect = item.getBoundingClientRect()
   const ghost = item.cloneNode(true)
@@ -466,38 +609,35 @@ function positionDragGhost(ghost, clientX, clientY, offsetX, offsetY) {
   ghost.style.top = `${clientY - offsetY}px`
 }
 
+/** Clean up drag visuals and optionally commit the reorder. */
 function endDragSession(clientY, shouldReorder) {
   if (!dragState) return
 
   const { item, ghost, id, started } = dragState
 
-  item.classList.remove('todo-item--reorder-active', 'todo-item--dragging')
-  ghost?.remove()
-
   if (shouldReorder && started) {
     const fromIndex = todos.findIndex((t) => t.id === id)
     const insertIndex = dropInsertIndex ?? getInsertIndex(clientY)
-    reorderTodos(fromIndex, insertIndex)
+    const firstPositions = captureItemPositions()
+
+    item.classList.remove('todo-item--reorder-active', 'todo-item--dragging')
+    ghost?.remove()
+    clearDropIndicator()
+
+    reorderTodos(fromIndex, insertIndex, firstPositions)
+  } else {
+    item.classList.remove('todo-item--reorder-active', 'todo-item--dragging')
+    ghost?.remove()
+    clearDropIndicator()
   }
 
-  clearDropIndicator()
   draggedTodoId = null
   dragState = null
 }
 
-async function persistSortOrder() {
-  const updates = todos.map((todo) =>
-    supabase.from('todos').update({ sort_order: todo.sort_order }).eq('id', todo.id),
-  )
-
-  const results = await Promise.all(updates)
-  const error = results.find((r) => r.error)?.error
-
-  if (error) {
-    console.error('Failed to persist sort order:', error.message)
-    await loadTodos()
-  }
-}
+// -----------------------------------------------------------------------------
+// Event listeners — connect user actions to the functions above
+// -----------------------------------------------------------------------------
 
 form.addEventListener('submit', async (event) => {
   event.preventDefault()
@@ -560,6 +700,17 @@ signOutButton.addEventListener('click', async () => {
   await handleAuthState(user)
 })
 
+showSignUpButton.addEventListener('click', () => {
+  setAuthFeedback(signInFeedback, '')
+  showAuthForm(signUpForm.hidden ? 'sign-up' : null)
+})
+
+showSignInButton.addEventListener('click', () => {
+  setAuthFeedback(signUpFeedback, '')
+  showAuthForm(signInForm.hidden ? 'sign-in' : null)
+})
+
+// Checkbox toggles — event delegation on the list
 list.addEventListener('change', async (event) => {
   if (!event.target.matches('.todo-checkbox')) return
   const item = event.target.closest('.todo-item')
@@ -567,6 +718,7 @@ list.addEventListener('change', async (event) => {
   await toggleTodo(id, event.target.checked)
 })
 
+// Edit / confirm / delete buttons — event delegation on the list
 list.addEventListener('click', async (event) => {
   const editButton = event.target.closest('.todo-edit-button, .todo-confirm-button')
   if (editButton) {
@@ -593,6 +745,7 @@ list.addEventListener('click', async (event) => {
   await deleteTodo(id)
 })
 
+// Keyboard shortcuts while editing: Escape to cancel, Enter to confirm
 list.addEventListener('keydown', async (event) => {
   if (!editingTodoId) return
 
@@ -607,6 +760,7 @@ list.addEventListener('keydown', async (event) => {
   }
 })
 
+// Pointer events for drag-to-reorder (works with mouse and touch)
 list.addEventListener('pointerdown', (event) => {
   if (editingTodoId !== null) return
 
@@ -617,7 +771,6 @@ list.addEventListener('pointerdown', (event) => {
   if (!item) return
 
   event.preventDefault()
-
   zone.setPointerCapture(event.pointerId)
   triggerReorderHaptic()
 
@@ -679,16 +832,11 @@ list.addEventListener('pointercancel', (event) => {
   endDragSession(event.clientY, false)
 })
 
-showSignUpButton.addEventListener('click', () => {
-  setAuthFeedback(signInFeedback, '')
-  showAuthForm(signUpForm.hidden ? 'sign-up' : null)
-})
+// -----------------------------------------------------------------------------
+// App startup — listen for auth changes and load the first session
+// -----------------------------------------------------------------------------
 
-showSignInButton.addEventListener('click', () => {
-  setAuthFeedback(signUpFeedback, '')
-  showAuthForm(signInForm.hidden ? 'sign-in' : null)
-})
-
+/** Run once: set up the user session and load their todos. */
 async function bootstrapAuth(sessionUser) {
   if (authBootstrapped) return
   authBootstrapped = true
@@ -704,6 +852,7 @@ async function bootstrapAuth(sessionUser) {
 }
 
 async function init() {
+  // Supabase fires this whenever login state changes (sign in, sign out, token refresh)
   supabase.auth.onAuthStateChange(async (event, session) => {
     if (event === 'INITIAL_SESSION') {
       await bootstrapAuth(session?.user ?? null)
@@ -728,6 +877,7 @@ async function init() {
     }
   })
 
+  // Fallback if INITIAL_SESSION already fired before our listener was registered
   if (!authBootstrapped) {
     const { data: { session } } = await supabase.auth.getSession()
     await bootstrapAuth(session?.user ?? null)

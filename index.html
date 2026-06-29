@@ -7,11 +7,13 @@
     <title>my-todo-app</title>
   </head>
   <body>
+    <!-- Main app container — styles limit width and centre on the page -->
     <div id="app">
       <header class="todo-header">
         <h1 class="todo-title">My Todo List</h1>
       </header>
 
+      <!-- Auth: guests see sign-up/sign-in; signed-in users see their email -->
       <section class="auth-panel" id="auth-panel">
         <div id="auth-guest">
           <div class="auth-toggle">
@@ -84,6 +86,7 @@
         </div>
       </section>
 
+      <!-- Add a new todo -->
       <form class="todo-form" id="todo-form">
         <input
           type="text"
@@ -96,8 +99,11 @@
         <button type="submit" class="todo-add-button">Add</button>
       </form>
 
+      <!-- Todo rows are inserted here by JavaScript (see main.js render()) -->
       <ul class="todo-list" id="todo-list"></ul>
     </div>
+
+    <!-- Vite loads main.js as an ES module — this is the app entry point -->
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

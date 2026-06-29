@@ -1,7 +1,13 @@
+/* =============================================================================
+   DESIGN TOKENS
+   All colours, spacing, and sizes live here. Change the palette in one place
+   and the whole app updates. Every other rule should reference these variables.
+   ============================================================================= */
 :root {
-  /* Colors — warm, earthy theme */
+  /* --- Colour palette (warm, earthy theme) --- */
   --color-bg: #f5f2eb;
   --color-surface: #fffcf7;
+  --color-input-bg: #ffffff;
   --color-text: #2c2924;
   --color-text-muted: #6f6a61;
   --color-border: #e4dfd4;
@@ -12,14 +18,14 @@
   --color-success: #6b8f5e;
   --color-completed: #a39d92;
 
-  /* Spacing scale */
+  /* --- Spacing scale --- */
   --space-xs: 0.25rem;
   --space-sm: 0.5rem;
   --space-md: 1rem;
   --space-lg: 1.5rem;
   --space-xl: 2rem;
 
-  /* Typography */
+  /* --- Typography --- */
   --font-body: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-size-sm: 0.875rem;
   --font-size-base: 1rem;
@@ -31,19 +37,58 @@
   --font-weight-medium: 500;
   --font-weight-semibold: 600;
 
-  /* Border radius */
+  /* --- Shape --- */
   --radius-sm: 0.25rem;
   --radius-md: 0.5rem;
   --radius-lg: 0.75rem;
   --radius-full: 9999px;
+  --border-width: 1px;
+  --outline-width: 2px;
+  --outline-offset: 1px;
 
-  /* Todo layout */
+  /* --- Layout sizes --- */
+  --size-app-max-width: 28rem;
+  --size-touch-target: 2.5rem;
+  --size-checkbox: 1.25rem;
+  --size-drag-handle-width: 1.5rem;
+  --size-drop-indicator: 2px;
+  --lift-drag: 3px;
+
+  /* --- Opacity --- */
+  --opacity-completed: 0.65;
+  --opacity-dragging: 0.18;
+  --opacity-ghost: 0.58;
+
+  /* --- Motion --- */
+  --duration-fast: 0.15s;
+  --duration-reorder: 0.38s;
+  --ease-default: ease;
+  --ease-reorder: cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* --- Layering (which element sits on top) --- */
+  --z-drop-indicator: 1;
+  --z-drag-active: 2;
+  --z-drag-ghost: 1000;
+
+  /* --- Shadows (built from palette colours, not raw rgba) --- */
+  --shadow-text-subtle: 0 1px 4px color-mix(in srgb, var(--color-text) 18%, transparent);
+  --shadow-drag-active: 0 6px 18px color-mix(in srgb, var(--color-text) 16%, transparent);
+  --shadow-drag-ghost: 0 10px 28px color-mix(in srgb, var(--color-text) 20%, transparent);
+  --shadow-drop-glow:
+    0 0 3px 1px color-mix(in srgb, var(--color-surface) 95%, transparent),
+    0 0 8px 2px color-mix(in srgb, var(--color-accent) 45%, transparent),
+    var(--shadow-text-subtle);
+
+  /* --- Todo-specific layout --- */
   --todo-row-height: calc(2 * var(--space-sm) + var(--font-size-base) * var(--line-height-body));
   --todo-action-col: 6rem;
   --todo-action-inset: var(--space-md);
 }
 
-/* Reset */
+/* =============================================================================
+   BASE RESET
+   Normalises browser defaults so our styles behave the same everywhere.
+   ============================================================================= */
 *,
 *::before,
 *::after {
@@ -88,7 +133,9 @@ a {
   text-decoration: none;
 }
 
-/* Body */
+/* =============================================================================
+   PAGE SHELL
+   ============================================================================= */
 body {
   min-height: 100svh;
   font-family: var(--font-body);
@@ -101,16 +148,17 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Layout */
 #app {
   width: 100%;
-  max-width: 28rem;
+  max-width: var(--size-app-max-width);
   margin-inline: auto;
   padding: var(--space-xl) var(--space-md);
   min-height: 100svh;
 }
 
-/* Todo app */
+/* =============================================================================
+   TODO HEADER & ADD FORM
+   ============================================================================= */
 .todo-header {
   margin-bottom: var(--space-lg);
 }
@@ -121,6 +169,7 @@ body {
   line-height: var(--line-height-tight);
 }
 
+/* Grid: text input on the left, Add button on the right */
 .todo-form {
   display: grid;
   grid-template-columns: 1fr var(--todo-action-col);
@@ -128,15 +177,15 @@ body {
   margin-bottom: var(--space-lg);
   min-height: var(--todo-row-height);
   background-color: var(--color-surface);
-  border: 1px solid var(--color-border);
+  border: var(--border-width) solid var(--color-border);
   border-radius: var(--radius-md);
   overflow: hidden;
 }
 
 .todo-form:focus-within {
   border-color: var(--color-accent);
-  outline: 2px solid var(--color-accent);
-  outline-offset: 1px;
+  outline: var(--outline-width) solid var(--color-accent);
+  outline-offset: var(--outline-offset);
 }
 
 .todo-input {
@@ -175,6 +224,9 @@ body {
   background-color: var(--color-accent-hover);
 }
 
+/* =============================================================================
+   TODO LIST
+   ============================================================================= */
 .todo-list {
   position: relative;
   display: flex;
@@ -182,22 +234,21 @@ body {
   gap: var(--space-sm);
 }
 
+/* Horizontal line shown while dragging to show where the item will land */
 .todo-drop-indicator {
   position: absolute;
   left: var(--radius-md);
   right: var(--radius-md);
-  height: 2px;
+  height: var(--size-drop-indicator);
   background-color: var(--color-accent);
   border-radius: var(--radius-full);
   pointer-events: none;
-  z-index: 1;
+  z-index: var(--z-drop-indicator);
   transform: translateY(-1px);
-  box-shadow:
-    0 0 3px 1px rgba(255, 252, 247, 0.95),
-    0 0 8px 2px rgba(95, 122, 90, 0.45),
-    0 1px 4px rgba(44, 41, 36, 0.18);
+  box-shadow: var(--shadow-drop-glow);
 }
 
+/* One row in the list */
 .todo-item {
   display: flex;
   align-items: center;
@@ -205,12 +256,12 @@ body {
   min-height: var(--todo-row-height);
   padding: var(--space-sm);
   background-color: var(--color-surface);
-  border: 1px solid var(--color-border);
+  border: var(--border-width) solid var(--color-border);
   border-radius: var(--radius-md);
   transition:
-    transform 0.15s ease,
-    box-shadow 0.15s ease,
-    opacity 0.15s ease;
+    transform var(--duration-fast) var(--ease-default),
+    box-shadow var(--duration-fast) var(--ease-default),
+    opacity var(--duration-fast) var(--ease-default);
 }
 
 .todo-drag-handle {
@@ -218,8 +269,8 @@ body {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  min-width: 1.5rem;
-  min-height: 2.5rem;
+  min-width: var(--size-drag-handle-width);
+  min-height: var(--size-touch-target);
   padding: 0;
   font-size: var(--font-size-sm);
   line-height: 1;
@@ -229,6 +280,7 @@ body {
   touch-action: none;
 }
 
+/* Left side: drag handle + todo text (or edit input) */
 .todo-reorder-zone {
   display: flex;
   align-items: center;
@@ -244,28 +296,49 @@ body {
   cursor: grabbing;
 }
 
+/* Lifted slightly while the user presses to reorder */
 .todo-item--reorder-active {
   position: relative;
-  z-index: 2;
-  transform: translateY(-3px);
-  box-shadow: 0 6px 18px rgba(44, 41, 36, 0.16);
+  z-index: var(--z-drag-active);
+  transform: translateY(calc(-1 * var(--lift-drag)));
+  box-shadow: var(--shadow-drag-active);
 }
 
+/* Original row fades while the ghost follows the pointer */
 .todo-item--dragging {
-  opacity: 0.35;
+  opacity: var(--opacity-dragging);
   transform: none;
   box-shadow: none;
+  transition: opacity var(--duration-fast) var(--ease-default);
 }
 
+/* Clone of the row that follows the finger/cursor during drag */
 .todo-drag-ghost {
   position: fixed;
-  z-index: 1000;
+  z-index: var(--z-drag-ghost);
   pointer-events: none;
-  opacity: 0.92;
+  opacity: var(--opacity-ghost);
   margin: 0;
   list-style: none;
-  transform: translateY(-3px);
-  box-shadow: 0 10px 28px rgba(44, 41, 36, 0.2);
+  transform: translateY(calc(-1 * var(--lift-drag)));
+  box-shadow: var(--shadow-drag-ghost);
+  transition: opacity var(--duration-fast) var(--ease-default);
+}
+
+/* FLIP animation: siblings slide into their new slots after a drop */
+.todo-item--reorder-animate {
+  transition: transform var(--duration-reorder) var(--ease-reorder);
+  will-change: transform;
+}
+
+.todo-item--reorder-invert {
+  transition: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .todo-item--reorder-animate {
+    transition: none;
+  }
 }
 
 .todo-text {
@@ -281,8 +354,8 @@ body {
   min-width: 0;
   padding: var(--space-xs) var(--space-sm);
   line-height: var(--line-height-body);
-  background-color: #fff;
-  border: 1px solid var(--color-border);
+  background-color: var(--color-input-bg);
+  border: var(--border-width) solid var(--color-border);
   border-radius: var(--radius-sm);
   user-select: text;
   -webkit-user-select: text;
@@ -290,14 +363,14 @@ body {
 }
 
 .todo-text-input:focus {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 1px;
+  outline: var(--outline-width) solid var(--color-accent);
+  outline-offset: var(--outline-offset);
   border-color: var(--color-accent);
 }
 
 .todo-item--editing {
   border-color: var(--color-accent);
-  box-shadow: 0 0 0 1px var(--color-accent);
+  box-shadow: 0 0 0 var(--border-width) var(--color-accent);
 }
 
 .todo-item--editing .todo-text-input {
@@ -309,6 +382,7 @@ body {
   cursor: default;
 }
 
+/* Right side: edit, delete, and checkbox buttons */
 .todo-actions {
   display: flex;
   align-items: center;
@@ -318,8 +392,8 @@ body {
 }
 
 .todo-checkbox {
-  width: 1.25rem;
-  height: 1.25rem;
+  width: var(--size-checkbox);
+  height: var(--size-checkbox);
   margin: 0;
   accent-color: var(--color-success);
   cursor: pointer;
@@ -330,8 +404,8 @@ body {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  min-width: 2.5rem;
-  min-height: 2.5rem;
+  min-width: var(--size-touch-target);
+  min-height: var(--size-touch-target);
   padding: 0;
 }
 
@@ -356,9 +430,10 @@ body {
   color: var(--color-danger);
 }
 
+/* Completed todos: faded with strikethrough text */
 .todo-item--completed,
 .todo-item:has(.todo-checkbox:checked) {
-  opacity: 0.65;
+  opacity: var(--opacity-completed);
 }
 
 .todo-item--completed .todo-text,
@@ -367,7 +442,9 @@ body {
   text-decoration: line-through;
 }
 
-/* Auth */
+/* =============================================================================
+   AUTH PANEL (sign up / sign in / signed-in user)
+   ============================================================================= */
 .auth-panel {
   margin-bottom: var(--space-md);
 }
@@ -383,7 +460,7 @@ body {
   font-weight: var(--font-weight-medium);
   color: var(--color-text-muted);
   background-color: var(--color-surface);
-  border: 1px solid var(--color-border);
+  border: var(--border-width) solid var(--color-border);
   border-radius: var(--radius-md);
 }
 
@@ -411,7 +488,7 @@ body {
   padding: var(--space-md);
   margin-top: var(--space-sm);
   background-color: var(--color-surface);
-  border: 1px solid var(--color-border);
+  border: var(--border-width) solid var(--color-border);
   border-radius: var(--radius-md);
 }
 
@@ -428,13 +505,13 @@ body {
 .auth-input {
   padding: var(--space-sm) var(--space-md);
   background-color: var(--color-bg);
-  border: 1px solid var(--color-border);
+  border: var(--border-width) solid var(--color-border);
   border-radius: var(--radius-md);
 }
 
 .auth-input:focus {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 1px;
+  outline: var(--outline-width) solid var(--color-accent);
+  outline-offset: var(--outline-offset);
   border-color: var(--color-accent);
 }
 
@@ -453,7 +530,7 @@ body {
 .auth-submit--secondary {
   color: var(--color-accent);
   background-color: transparent;
-  border: 1px solid var(--color-accent);
+  border: var(--border-width) solid var(--color-accent);
 }
 
 .auth-submit--secondary:hover {
