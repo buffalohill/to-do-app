@@ -9,6 +9,9 @@ let dragState = null
 
 const DRAG_THRESHOLD = 6
 
+const EDIT_ICON = `<svg class="todo-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10.5 2.5l3 3L5.5 13.5H2.5v-3L10.5 2.5z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>`
+const DELETE_ICON = `<svg class="todo-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`
+
 const form = document.getElementById('todo-form')
 const input = document.getElementById('todo-input')
 const list = document.getElementById('todo-list')
@@ -128,14 +131,19 @@ function render() {
     li.dataset.id = String(todo.id)
     li.innerHTML = `
       <button type="button" class="todo-drag-handle" aria-label="Reorder">⋮⋮</button>
-      <input
-        type="checkbox"
-        class="todo-checkbox"
-        ${todo.is_complete ? 'checked' : ''}
-        aria-label="Mark complete"
-      />
       <span class="todo-text">${escapeHtml(todo.text)}</span>
-      <button type="button" class="todo-delete-button">Delete</button>
+      <div class="todo-actions">
+        <label class="todo-action-target todo-checkbox-label">
+          <input
+            type="checkbox"
+            class="todo-checkbox"
+            ${todo.is_complete ? 'checked' : ''}
+            aria-label="Mark complete"
+          />
+        </label>
+        <button type="button" class="todo-action-target todo-icon-button todo-edit-button" aria-label="Edit">${EDIT_ICON}</button>
+        <button type="button" class="todo-action-target todo-icon-button todo-delete-button" aria-label="Delete">${DELETE_ICON}</button>
+      </div>
     `
     list.insertBefore(li, dropIndicator)
   })
@@ -473,8 +481,9 @@ list.addEventListener('change', async (event) => {
 })
 
 list.addEventListener('click', async (event) => {
-  if (!event.target.matches('.todo-delete-button')) return
-  const item = event.target.closest('.todo-item')
+  const deleteButton = event.target.closest('.todo-delete-button')
+  if (!deleteButton) return
+  const item = deleteButton.closest('.todo-item')
   const id = Number(item.dataset.id)
   await deleteTodo(id)
 })
