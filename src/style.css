@@ -552,7 +552,7 @@ body {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  justify-content: start;
   gap: var(--space-xs);
 }
 
@@ -571,4 +571,19 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 100%;
+}
+
+.auth-sign-out-link {
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: 0;
+  cursor: pointer;
+  justify-self: end;
+  align-self: start;
+  text-align: right;
+}
+
+.auth-sign-out-link:hover {
+  color: var(--color-text);
 }
