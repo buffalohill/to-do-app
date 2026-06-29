@@ -5,6 +5,9 @@ let todos = []
 let currentUser = null
 let draggedTodoId = null
 let dropInsertIndex = null
+let dragState = null
+
+const DRAG_THRESHOLD = 6
 
 const form = document.getElementById('todo-form')
 const input = document.getElementById('todo-input')
@@ -124,7 +127,7 @@ function render() {
     li.className = `todo-item${todo.is_complete ? ' todo-item--completed' : ''}`
     li.dataset.id = String(todo.id)
     li.innerHTML = `
-      <button type="button" class="todo-drag-handle" draggable="true" aria-label="Reorder">⋮⋮</button>
+      <button type="button" class="todo-drag-handle" aria-label="Reorder">⋮⋮</button>
       <input
         type="checkbox"
         class="todo-checkbox"
@@ -347,6 +350,46 @@ function clearDropIndicator() {
   dropIndicator.hidden = true
 }
 
+function triggerReorderHaptic() {
+  if (typeof navigator.vibrate === 'function') {
+    navigator.vibrate(12)
+  }
+}
+
+function createDragGhost(item) {
+  const rect = item.getBoundingClientRect()
+  const ghost = item.cloneNode(true)
+  ghost.classList.add('todo-drag-ghost')
+  ghost.setAttribute('aria-hidden', 'true')
+  ghost.style.width = `${rect.width}px`
+  document.body.appendChild(ghost)
+  return { ghost, rect }
+}
+
+function positionDragGhost(ghost, clientX, clientY, offsetX, offsetY) {
+  ghost.style.left = `${clientX - offsetX}px`
+  ghost.style.top = `${clientY - offsetY}px`
+}
+
+function endDragSession(clientY, shouldReorder) {
+  if (!dragState) return
+
+  const { item, ghost, id, started } = dragState
+
+  item.classList.remove('todo-item--reorder-active', 'todo-item--dragging')
+  ghost?.remove()
+
+  if (shouldReorder && started) {
+    const fromIndex = todos.findIndex((t) => t.id === id)
+    const insertIndex = dropInsertIndex ?? getInsertIndex(clientY)
+    reorderTodos(fromIndex, insertIndex)
+  }
+
+  clearDropIndicator()
+  draggedTodoId = null
+  dragState = null
+}
+
 async function persistSortOrder() {
   const updates = todos.map((todo) =>
     supabase.from('todos').update({ sort_order: todo.sort_order }).eq('id', todo.id),
@@ -436,56 +479,74 @@ list.addEventListener('click', async (event) => {
   await deleteTodo(id)
 })
 
-list.addEventListener('dragstart', (event) => {
+list.addEventListener('pointerdown', (event) => {
   const handle = event.target.closest('.todo-drag-handle')
   if (!handle) return
 
   const item = handle.closest('.todo-item')
-  draggedTodoId = Number(item.dataset.id)
-  item.classList.add('todo-item--dragging')
-  event.dataTransfer.effectAllowed = 'move'
-  event.dataTransfer.setData('text/plain', String(draggedTodoId))
-})
-
-list.addEventListener('dragover', (event) => {
-  if (draggedTodoId === null) return
+  if (!item) return
 
   event.preventDefault()
-  event.dataTransfer.dropEffect = 'move'
+
+  handle.setPointerCapture(event.pointerId)
+  triggerReorderHaptic()
+
+  item.classList.add('todo-item--reorder-active')
+  draggedTodoId = Number(item.dataset.id)
+
+  dragState = {
+    id: draggedTodoId,
+    item,
+    ghost: null,
+    offsetX: 0,
+    offsetY: 0,
+    pointerId: event.pointerId,
+    started: false,
+    startX: event.clientX,
+    startY: event.clientY,
+  }
+})
+
+list.addEventListener('pointermove', (event) => {
+  if (!dragState || event.pointerId !== dragState.pointerId) return
+
+  const { item, startX, startY } = dragState
+
+  if (!dragState.started) {
+    const distance = Math.hypot(event.clientX - startX, event.clientY - startY)
+    if (distance < DRAG_THRESHOLD) return
+
+    const { ghost, rect } = createDragGhost(item)
+    dragState.ghost = ghost
+    dragState.offsetX = event.clientX - rect.left
+    dragState.offsetY = event.clientY - rect.top
+    dragState.started = true
+
+    item.classList.add('todo-item--dragging')
+    item.classList.remove('todo-item--reorder-active')
+  }
+
+  event.preventDefault()
+  positionDragGhost(
+    dragState.ghost,
+    event.clientX,
+    event.clientY,
+    dragState.offsetX,
+    dragState.offsetY,
+  )
 
   dropInsertIndex = getInsertIndex(event.clientY)
   positionDropIndicator(dropInsertIndex)
 })
 
-list.addEventListener('dragleave', (event) => {
-  if (!list.contains(event.relatedTarget)) {
-    clearDropIndicator()
-  }
+list.addEventListener('pointerup', (event) => {
+  if (!dragState || event.pointerId !== dragState.pointerId) return
+  endDragSession(event.clientY, true)
 })
 
-list.addEventListener('drop', (event) => {
-  event.preventDefault()
-
-  const fromIndex = todos.findIndex((t) => t.id === draggedTodoId)
-  const insertIndex = dropInsertIndex ?? getInsertIndex(event.clientY)
-
-  list.querySelectorAll('.todo-item--dragging').forEach((el) => {
-    el.classList.remove('todo-item--dragging')
-  })
-
-  clearDropIndicator()
-  draggedTodoId = null
-
-  if (fromIndex === -1) return
-  reorderTodos(fromIndex, insertIndex)
-})
-
-list.addEventListener('dragend', () => {
-  draggedTodoId = null
-  clearDropIndicator()
-  list.querySelectorAll('.todo-item--dragging').forEach((el) => {
-    el.classList.remove('todo-item--dragging')
-  })
+list.addEventListener('pointercancel', (event) => {
+  if (!dragState || event.pointerId !== dragState.pointerId) return
+  endDragSession(event.clientY, false)
 })
 
 showSignUpButton.addEventListener('click', () => {
