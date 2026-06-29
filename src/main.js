@@ -3,6 +3,8 @@ import { supabase } from './supabase.js'
 
 let todos = []
 let currentUser = null
+let draggedTodoId = null
+let dropInsertIndex = null
 
 const form = document.getElementById('todo-form')
 const input = document.getElementById('todo-input')
@@ -17,6 +19,11 @@ const signInFeedback = document.getElementById('sign-in-feedback')
 const signOutButton = document.getElementById('sign-out-button')
 const showSignUpButton = document.getElementById('show-sign-up')
 const showSignInButton = document.getElementById('show-sign-in')
+
+const dropIndicator = document.createElement('div')
+dropIndicator.className = 'todo-drop-indicator'
+dropIndicator.hidden = true
+list.appendChild(dropIndicator)
 
 let authReady = false
 let authBootstrapped = false
@@ -33,7 +40,11 @@ function isPermanentUser(user) {
 
 function showTodoError(message) {
   if (!message) return
-  list.innerHTML = `<li class="todo-item">${escapeHtml(message)}</li>`
+  list.querySelectorAll('.todo-item').forEach((el) => el.remove())
+  const li = document.createElement('li')
+  li.className = 'todo-item'
+  li.textContent = message
+  list.insertBefore(li, dropIndicator)
 }
 
 async function getSessionUser() {
@@ -106,10 +117,14 @@ function updateAuthUI(user) {
 }
 
 function render() {
-  list.innerHTML = todos
-    .map(
-      (todo) => `
-    <li class="todo-item${todo.is_complete ? ' todo-item--completed' : ''}" data-id="${todo.id}">
+  list.querySelectorAll('.todo-item').forEach((el) => el.remove())
+
+  todos.forEach((todo) => {
+    const li = document.createElement('li')
+    li.className = `todo-item${todo.is_complete ? ' todo-item--completed' : ''}`
+    li.dataset.id = String(todo.id)
+    li.innerHTML = `
+      <button type="button" class="todo-drag-handle" draggable="true" aria-label="Reorder">⋮⋮</button>
       <input
         type="checkbox"
         class="todo-checkbox"
@@ -118,10 +133,9 @@ function render() {
       />
       <span class="todo-text">${escapeHtml(todo.text)}</span>
       <button type="button" class="todo-delete-button">Delete</button>
-    </li>
-  `,
-    )
-    .join('')
+    `
+    list.insertBefore(li, dropIndicator)
+  })
 }
 
 async function ensureSession() {
@@ -141,8 +155,12 @@ async function handleAuthState(user) {
   updateAuthUI(user)
 
   if (!user) {
-    list.innerHTML =
-      '<li class="todo-item">Sign-in failed. Enable anonymous auth in Supabase (Authentication → Providers → Anonymous).</li>'
+    list.querySelectorAll('.todo-item').forEach((el) => el.remove())
+    const li = document.createElement('li')
+    li.className = 'todo-item'
+    li.textContent =
+      'Sign-in failed. Enable anonymous auth in Supabase (Authentication → Providers → Anonymous).'
+    list.insertBefore(li, dropIndicator)
     return
   }
 
@@ -155,9 +173,9 @@ async function loadTodos() {
 
   const { data, error } = await supabase
     .from('todos')
-    .select('id, text, is_complete, created_at')
+    .select('id, text, is_complete, sort_order')
     .eq('user_id', user.id)
-    .order('created_at', { ascending: true })
+    .order('sort_order', { ascending: true })
 
   if (error) {
     console.error('Failed to load todos:', error.message)
@@ -221,10 +239,13 @@ async function addTodo(text) {
     return
   }
 
+  const maxSortOrder = todos.length > 0 ? Math.max(...todos.map((t) => t.sort_order)) : -1
+
   const { error } = await supabase.from('todos').insert({
     text,
     is_complete: false,
     user_id: user.id,
+    sort_order: maxSortOrder + 1,
   })
 
   if (error) {
@@ -262,6 +283,82 @@ async function deleteTodo(id) {
   }
 
   await loadTodos()
+}
+
+function reorderTodos(fromIndex, insertIndex) {
+  if (insertIndex === fromIndex || insertIndex === fromIndex + 1) return
+
+  const [moved] = todos.splice(fromIndex, 1)
+  const toIndex = insertIndex > fromIndex ? insertIndex - 1 : insertIndex
+  todos.splice(toIndex, 0, moved)
+
+  todos.forEach((todo, index) => {
+    todo.sort_order = index
+  })
+
+  render()
+  persistSortOrder()
+}
+
+function getInsertIndex(clientY) {
+  const items = [...list.querySelectorAll('.todo-item')]
+  if (items.length === 0) return 0
+
+  for (let i = 0; i < items.length; i++) {
+    const rect = items[i].getBoundingClientRect()
+    if (clientY < rect.top + rect.height / 2) return i
+  }
+
+  return items.length
+}
+
+function positionDropIndicator(insertIndex) {
+  const items = list.querySelectorAll('.todo-item')
+
+  if (items.length === 0) {
+    dropIndicator.hidden = true
+    return
+  }
+
+  const fromIndex = todos.findIndex((t) => t.id === draggedTodoId)
+  if (insertIndex === fromIndex || insertIndex === fromIndex + 1) {
+    dropIndicator.hidden = true
+    return
+  }
+
+  let y
+  if (insertIndex === 0) {
+    y = items[0].offsetTop
+  } else if (insertIndex >= items.length) {
+    const last = items[items.length - 1]
+    y = last.offsetTop + last.offsetHeight
+  } else {
+    const prev = items[insertIndex - 1]
+    const next = items[insertIndex]
+    y = (prev.offsetTop + prev.offsetHeight + next.offsetTop) / 2
+  }
+
+  dropIndicator.style.top = `${y}px`
+  dropIndicator.hidden = false
+}
+
+function clearDropIndicator() {
+  dropInsertIndex = null
+  dropIndicator.hidden = true
+}
+
+async function persistSortOrder() {
+  const updates = todos.map((todo) =>
+    supabase.from('todos').update({ sort_order: todo.sort_order }).eq('id', todo.id),
+  )
+
+  const results = await Promise.all(updates)
+  const error = results.find((r) => r.error)?.error
+
+  if (error) {
+    console.error('Failed to persist sort order:', error.message)
+    await loadTodos()
+  }
 }
 
 form.addEventListener('submit', async (event) => {
@@ -337,6 +434,58 @@ list.addEventListener('click', async (event) => {
   const item = event.target.closest('.todo-item')
   const id = Number(item.dataset.id)
   await deleteTodo(id)
+})
+
+list.addEventListener('dragstart', (event) => {
+  const handle = event.target.closest('.todo-drag-handle')
+  if (!handle) return
+
+  const item = handle.closest('.todo-item')
+  draggedTodoId = Number(item.dataset.id)
+  item.classList.add('todo-item--dragging')
+  event.dataTransfer.effectAllowed = 'move'
+  event.dataTransfer.setData('text/plain', String(draggedTodoId))
+})
+
+list.addEventListener('dragover', (event) => {
+  if (draggedTodoId === null) return
+
+  event.preventDefault()
+  event.dataTransfer.dropEffect = 'move'
+
+  dropInsertIndex = getInsertIndex(event.clientY)
+  positionDropIndicator(dropInsertIndex)
+})
+
+list.addEventListener('dragleave', (event) => {
+  if (!list.contains(event.relatedTarget)) {
+    clearDropIndicator()
+  }
+})
+
+list.addEventListener('drop', (event) => {
+  event.preventDefault()
+
+  const fromIndex = todos.findIndex((t) => t.id === draggedTodoId)
+  const insertIndex = dropInsertIndex ?? getInsertIndex(event.clientY)
+
+  list.querySelectorAll('.todo-item--dragging').forEach((el) => {
+    el.classList.remove('todo-item--dragging')
+  })
+
+  clearDropIndicator()
+  draggedTodoId = null
+
+  if (fromIndex === -1) return
+  reorderTodos(fromIndex, insertIndex)
+})
+
+list.addEventListener('dragend', () => {
+  draggedTodoId = null
+  clearDropIndicator()
+  list.querySelectorAll('.todo-item--dragging').forEach((el) => {
+    el.classList.remove('todo-item--dragging')
+  })
 })
 
 showSignUpButton.addEventListener('click', () => {

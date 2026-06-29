@@ -176,21 +176,56 @@ body {
 }
 
 .todo-list {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: var(--space-sm);
 }
 
+.todo-drop-indicator {
+  position: absolute;
+  left: var(--radius-md);
+  right: var(--radius-md);
+  height: 2px;
+  background-color: var(--color-accent);
+  border-radius: var(--radius-full);
+  pointer-events: none;
+  z-index: 1;
+  transform: translateY(-1px);
+  box-shadow:
+    0 0 3px 1px rgba(255, 252, 247, 0.95),
+    0 0 8px 2px rgba(95, 122, 90, 0.45),
+    0 1px 4px rgba(44, 41, 36, 0.18);
+}
+
 .todo-item {
   display: grid;
-  grid-template-columns: auto 1fr var(--todo-action-col);
+  grid-template-columns: auto auto 1fr var(--todo-action-col);
   column-gap: var(--space-sm);
   align-items: center;
   min-height: var(--todo-row-height);
-  padding: var(--space-sm) 0 var(--space-sm) var(--space-md);
+  padding: var(--space-sm) 0 var(--space-sm) var(--space-sm);
   background-color: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
+}
+
+.todo-drag-handle {
+  padding: 0;
+  font-size: var(--font-size-sm);
+  line-height: 1;
+  color: var(--color-text-muted);
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+.todo-drag-handle:active {
+  cursor: grabbing;
+}
+
+.todo-item--dragging {
+  opacity: 0.5;
 }
 
 .todo-checkbox {
