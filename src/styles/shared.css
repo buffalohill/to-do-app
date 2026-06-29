@@ -1,0 +1,35 @@
+/* Cross-component patterns */
+.todo-form,
+.todo-item,
+.auth-form {
+  background-color: var(--color-surface);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.todo-form:focus-within,
+.todo-text-input:focus,
+.auth-input:focus {
+  outline: var(--focus-ring);
+  outline-offset: var(--outline-offset);
+  border-color: var(--color-accent);
+}
+
+.todo-add-button,
+.auth-submit {
+  font-weight: var(--font-weight-medium);
+  color: var(--color-surface);
+  background-color: var(--color-accent);
+}
+
+.todo-add-button:hover,
+.auth-submit:hover {
+  background-color: var(--color-accent-hover);
+}
+
+.todo-drag-handle,
+.todo-reorder-zone,
+.todo-text {
+  user-select: none;
+  -webkit-user-select: none;
+}

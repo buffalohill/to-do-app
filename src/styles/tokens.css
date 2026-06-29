@@ -1,0 +1,88 @@
+/* Design tokens — palette, spacing, motion, and derived values */
+:root {
+  /* Colour palette (warm, earthy theme) */
+  --color-bg: #f5f2eb;
+  --color-surface: #fffcf7;
+  --color-input-bg: #ffffff;
+  --color-text: #2c2924;
+  --color-text-muted: #6f6a61;
+  --color-border: #e4dfd4;
+  --color-accent: #5f7a5a;
+  --color-accent-hover: #4d6349;
+  --color-accent-gradient-end: color-mix(in srgb, var(--color-accent) 75%, var(--color-success));
+  --color-danger: #c45c4a;
+  --color-danger-hover: #a84d3e;
+  --color-success: #6b8f5e;
+  --color-completed: #a39d92;
+
+  /* Spacing scale */
+  --space-xs: 0.25rem;
+  --space-sm: 0.5rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2rem;
+
+  /* Typography */
+  --font-body: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-size-sm: 0.875rem;
+  --font-size-base: 1rem;
+  --font-size-lg: 1.25rem;
+  --font-size-xl: 1.5rem;
+  --font-size-2xl: 2rem;
+  --line-height-body: 1.5;
+  --line-height-tight: 1.25;
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+
+  /* Shape */
+  --radius-sm: 0.25rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-full: 9999px;
+  --border-width: 1px;
+  --outline-width: 2px;
+  --outline-offset: 1px;
+  --focus-ring: var(--outline-width) solid var(--color-accent);
+
+  /* Layout sizes */
+  --size-app-max-width: 28rem;
+  --size-touch-target: 2.5rem;
+  --size-checkbox: 1.25rem;
+  --size-drag-handle-width: 1.5rem;
+  --size-drop-indicator: 2px;
+  --lift-drag: 3px;
+
+  /* Opacity */
+  --opacity-completed: 0.65;
+  --opacity-dragging: 0.18;
+  --opacity-ghost: 0.58;
+
+  /* Motion */
+  --duration-fast: 0.15s;
+  --duration-reorder: 0.38s;
+  --ease-default: ease;
+  --ease-reorder: cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* Layering */
+  --z-drop-indicator: 1;
+  --z-drag-active: 2;
+  --z-drag-ghost: 1000;
+
+  /* Shadows */
+  --shadow-text-subtle: 0 1px 4px color-mix(in srgb, var(--color-text) 18%, transparent);
+  --shadow-drag-active: 0 6px 18px color-mix(in srgb, var(--color-text) 16%, transparent);
+  --shadow-drag-ghost: 0 10px 28px color-mix(in srgb, var(--color-text) 20%, transparent);
+  --shadow-drop-glow:
+    0 0 3px 1px color-mix(in srgb, var(--color-surface) 95%, transparent),
+    0 0 8px 2px color-mix(in srgb, var(--color-accent) 45%, transparent),
+    var(--shadow-text-subtle);
+  --shadow-title-mark:
+    0 2px 6px color-mix(in srgb, var(--color-accent) 28%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--color-surface) 35%, transparent);
+
+  /* Todo layout */
+  --todo-row-height: calc(2 * var(--space-sm) + var(--font-size-base) * var(--line-height-body));
+  --todo-action-col: 6rem;
+  --todo-action-inset: var(--space-md);
+}
